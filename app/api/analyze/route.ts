@@ -1,51 +1,99 @@
+// app/api/analyze/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-export const runtime = "nodejs"; // make sure this runs on Node, not Edge
+export const runtime = "nodejs";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // must be in .env.local
-});
+type AnalyzeRequest = { food: string };
+
+type Nutrients = {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
+type AIResponse = {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
+// Helper: safe JSON parse into Nutrients
+function toNutrients(obj: AIResponse): Nutrients {
+  return {
+    calories: Number(obj.calories ?? 0),
+    protein: Number(obj.protein ?? 0),
+    carbs: Number(obj.carbs ?? 0),
+    fat: Number(obj.fat ?? 0),
+  };
+}
 
 export async function POST(req: Request) {
+  // Validate request body
+  let body: AnalyzeRequest;
   try {
-    const { food } = await req.json();
+    body = (await req.json()) as AnalyzeRequest;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body." },
+      { status: 400 }
+    );
+  }
 
-    if (!food || typeof food !== "string") {
-      return NextResponse.json(
-        { ok: false, error: "Missing 'food' (string) in body." },
-        { status: 400 }
-      );
-    }
+  if (!body?.food || typeof body.food !== "string") {
+    return NextResponse.json(
+      { ok: false, error: "Missing 'food' (string)." },
+      { status: 400 }
+    );
+  }
 
-    const prompt = `
-Estimate the calories, protein (g), carbs (g), and fat (g) for: "${food}".
-Respond ONLY with JSON of the shape:
-{"calories": number, "protein": number, "carbs": number, "fat": number}
-No extra text, no markdown.
-`.trim();
+  // Require API key
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json(
+      { ok: false, error: "OPENAI_API_KEY is not set on the server." },
+      { status: 500 }
+    );
+  }
 
-    const resp = await openai.responses.create({
+  try {
+    const openai = new OpenAI({ apiKey });
+
+    const prompt = [
+      "Estimate nutrition for the following food. Return ONLY valid JSON with keys: calories, protein, carbs, fat (all numbers in grams, except calories).",
+      `Food: ${body.food}`,
+      "Example output: {\"calories\": 250, \"protein\": 12, \"carbs\": 30, \"fat\": 8}",
+    ].join("\n");
+
+    const chat = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      input: prompt,
+      messages: [{ role: "user", content: prompt }],
       temperature: 0,
     });
 
-    // SDK v4: easiest way to get text:
-    const text = resp.output_text;
+    const text: string =
+      chat.choices[0]?.message?.content?.trim() ?? "{\"calories\":0,\"protein\":0,\"carbs\":0,\"fat\":0}";
 
-    let parsed: any;
+    // Try to parse the model output as JSON
+    let parsed: AIResponse;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(text) as AIResponse;
     } catch {
-      parsed = { raw: text }; // if the model deviates, you’ll still see what it said
+      // If the model returned non-JSON, try to extract with a quick retry
+      return NextResponse.json(
+        { ok: false, error: "Model did not return valid JSON.", raw: text },
+        { status: 502 }
+      );
     }
 
-    return NextResponse.json({ ok: true, result: parsed });
-  } catch (err: any) {
+    const result: Nutrients = toNutrients(parsed);
+    return NextResponse.json({ ok: true, result }, { status: 200 });
+  } catch (err) {
     console.error(err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "Server error" },
+      { ok: false, error: "Server error while analyzing." },
       { status: 500 }
     );
   }
