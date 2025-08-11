@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -35,14 +34,13 @@ export default function Home() {
 
       const data = (await res.json()) as AnalyzeResponse;
 
-      if (!res.ok || !("ok" in data) || data.ok === false) {
-        const msg = (data as { error?: string }).error ?? "Request failed.";
-        setError(msg);
+      if (!res.ok || data.ok === false) {
+        setError(data.ok === false ? data.error : "Request failed.");
         return;
       }
 
       setResult(data.result);
-    } catch (err) {
+    } catch {
       setError("Network error.");
     } finally {
       setLoading(false);
@@ -73,11 +71,7 @@ export default function Home() {
         </button>
       </form>
 
-      {error && (
-        <p className="mt-4 text-sm text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       {result && (
         <div className="mt-6 rounded border p-4">
@@ -85,13 +79,10 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-y-1 text-sm">
             <span className="text-gray-600">Calories</span>
             <span>{result.calories}</span>
-
             <span className="text-gray-600">Protein (g)</span>
             <span>{result.protein}</span>
-
             <span className="text-gray-600">Carbs (g)</span>
             <span>{result.carbs}</span>
-
             <span className="text-gray-600">Fat (g)</span>
             <span>{result.fat}</span>
           </div>

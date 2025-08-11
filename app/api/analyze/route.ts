@@ -1,4 +1,3 @@
-// app/api/analyze/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -20,7 +19,6 @@ type AIResponse = {
   fat: number;
 };
 
-// Helper: safe JSON parse into Nutrients
 function toNutrients(obj: AIResponse): Nutrients {
   return {
     calories: Number(obj.calories ?? 0),
@@ -31,7 +29,7 @@ function toNutrients(obj: AIResponse): Nutrients {
 }
 
 export async function POST(req: Request) {
-  // Validate request body
+  // Parse & validate body
   let body: AnalyzeRequest;
   try {
     body = (await req.json()) as AnalyzeRequest;
@@ -41,7 +39,6 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-
   if (!body?.food || typeof body.food !== "string") {
     return NextResponse.json(
       { ok: false, error: "Missing 'food' (string)." },
@@ -49,7 +46,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // Require API key
+  // API key required
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -74,14 +71,14 @@ export async function POST(req: Request) {
     });
 
     const text: string =
-      chat.choices[0]?.message?.content?.trim() ?? "{\"calories\":0,\"protein\":0,\"carbs\":0,\"fat\":0}";
+      chat.choices[0]?.message?.content?.trim() ??
+      "{\"calories\":0,\"protein\":0,\"carbs\":0,\"fat\":0}";
 
-    // Try to parse the model output as JSON
+    // Parse model output as JSON
     let parsed: AIResponse;
     try {
       parsed = JSON.parse(text) as AIResponse;
     } catch {
-      // If the model returned non-JSON, try to extract with a quick retry
       return NextResponse.json(
         { ok: false, error: "Model did not return valid JSON.", raw: text },
         { status: 502 }
